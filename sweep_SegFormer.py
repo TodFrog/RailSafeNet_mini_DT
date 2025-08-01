@@ -1,4 +1,10 @@
 from scripts.dataloader_SegFormer import CustomDataset
+#import sys
+#from scripts import dataloader_SegFormer
+#print("="*80)
+#print(f"🔥 파이썬이 실제로 사용하고 있는 파일 경로: {dataloader_SegFormer.__file__}")
+#print("="*80)
+#sys.exit() # ❗️ 경로만 확인하고 바로 종료
 from scripts.metrics_filtered_cls import compute_map_cls, compute_IoU
 from transformers import SegformerModel, SegformerConfig, SegformerForSemanticSegmentation, SegformerImageProcessor
 from torch.optim import SGD, Adam, Adagrad, AdamW
@@ -33,7 +39,7 @@ def get_image_4_wandb(path, input_size = [224,224]):
 
 def wandb_init(num_epochs, lr, batch_size, outputs, optimizer, scheduler, model):
     wandb.init(
-        project="RailNet",
+        project="DP_train_full",
         config={
             "learning_rate": lr,
             "batch_size": batch_size,
@@ -49,11 +55,11 @@ LIGHT = False
 WANDB = True
 
 if not LIGHT:
-    PATH_JPGS = "RailNet_DT/rs19_val/jpgs/rs19_val"
-    PATH_MASKS = "RailNet_DT/rs19_val/uint8/rs19_val"  # /rails
+    PATH_JPGS = "/home/mmc-server3/Server/Datasets/rs19_val/jpgs/rs19_val"
+    PATH_MASKS = "/home/mmc-server3/Server/Datasets/rs19_val/uint8/rs19_val"
 else:
-    PATH_JPGS = "RailNet_DT/rs19_val_light/jpgs/rs19_val"
-    PATH_MASKS = "RailNet_DT/rs19_val_light/uint8/rs19_val"
+    PATH_JPGS = "/home/mmc-server3/Server/Datasets/rs19_val_light/jpgs/rs19_val"
+    PATH_MASKS = "/home/mmc-server3/Server/Datasets/rs19_val_light/uint8/rs19_val"
 
 PATH_MODELS = "RailNet_DT/models"
 PATH_LOGS = "RailNet_DT/logs"
@@ -66,6 +72,12 @@ def create_model(output_channels=1):
     
     model.train()
     
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs!")
+        model = nn.DataParallel(model)
+    else:
+        print("Using single GPU or CPU.")
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
     
@@ -74,6 +86,12 @@ def create_model(output_channels=1):
 def load_model(model_path):
     model = torch.load(model_path, map_location=torch.device('cpu'))
     model.train()
+    
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs for loaded model!")
+        model = nn.DataParallel(model)
+    else:
+        print("Using single GPU or CPU for loaded model.")
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -103,8 +121,8 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion, sched
         for phase in ['Train', 'Valid']:
             
             image_processor = SegformerImageProcessor(reduce_labels=False)
-            dataset = CustomDataset(PATH_JPGS, PATH_MASKS, image_processor, image_size, subset=phase, val_fraction=0.5)
-            dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+            dataset = CustomDataset(PATH_JPGS, PATH_MASKS, image_processor, image_size, subset=phase, val_fraction=0.5, num_labels=config.outs)
+            dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0) # 👈 이 옵션 추가
             
             if phase == 'Train':
                 model.train()
@@ -280,7 +298,7 @@ sweep_config = {
             'value': 1024  # Fixed image size
         },
         'outs': {
-            'value': 13  # Fixed number of outputs
+            'value': 19  # ✅ 13에서 19로 변경
         }
     }
 }
@@ -301,7 +319,7 @@ def sweep_train():
 
         # Define scheduler
         if config.scheduler == 'ReduceLROnPlateau':
-            scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5, verbose=True, threshold=0.005, threshold_mode='abs')
+            scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5, threshold=0.005, threshold_mode='abs')
         elif config.scheduler == 'LinearLR':
             scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.5, total_iters=2)
         

@@ -43,15 +43,15 @@ def wandb_init(num_epochs, lr, batch_size, outputs, optimizer, scheduler, model)
         }
     )
 
-LIGHT = True
+LIGHT = False
 WANDB = False
 
 if not LIGHT:
-    PATH_JPGS = "RailNet_DT/rs19_val/jpgs/rs19_val"
-    PATH_MASKS = "RailNet_DT/rs19_val/uint8/rs19_val"
+    PATH_JPGS = "/home/mmc-server3/Server/Datasets/rs19_val/jpgs/rs19_val"
+    PATH_MASKS = "/home/mmc-server3/Server/Datasets/rs19_val/uint8/rs19_val"
 else:
-    PATH_JPGS = "RailNet_DT/rs19_val_light/jpgs/rs19_val"
-    PATH_MASKS = "RailNet_DT/rs19_val_light/uint8/rs19_val"
+    PATH_JPGS = "/home/mmc-server3/Server/Datasets/rs19_val_light/jpgs/rs19_val"
+    PATH_MASKS = "/home/mmc-server3/Server/Datasets/rs19_val_light/uint8/rs19_val"
 
 PATH_MODELS = "RailNet_DT/models"
 PATH_LOGS = "RailNet_DT/logs"
@@ -64,6 +64,12 @@ def create_model(output_channels=1):
 
     model.train()
     
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs!")
+        model = nn.DataParallel(model)
+    else:
+        print("Using single GPU or CPU.")
+    
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
     
@@ -73,12 +79,18 @@ def load_model(model_path):
     model = torch.load(model_path, map_location=torch.device('cpu'))
     model.train()
     
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs for loaded model!")
+        model = nn.DataParallel(model)
+    else:
+        print("Using single GPU or CPU for loaded model.")
+    
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
     
     return model
 
-def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
+def train(model, num_epochs, batch_size, image_size, optimizer, criterion, outs):
     start = time.time()
     best_model = copy.deepcopy(model.state_dict())
     best_loss = 1e10
@@ -101,7 +113,7 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
         for phase in ['Train', 'Valid']:
 
             image_processor = SegformerImageProcessor(size={"height": 1024, "width": 1024})
-            dataset = CustomDataset(PATH_JPGS, PATH_MASKS, image_processor, image_size, subset=phase, val_fraction=0.5)
+            dataset = CustomDataset(PATH_JPGS, PATH_MASKS, image_processor, image_size, subset=phase, val_fraction=0.5, num_labels=outs)
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
             
             if phase == 'Train':
@@ -249,17 +261,17 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
     return final_model, model
 
 if __name__ == "__main__":
-    epochs = 150
-    lr = 0.00006
-    batch_size = 4
-    outs = 13
+    epochs = 200
+    lr = 0.0002615
+    batch_size = 32
+    outs = 19 # ✅ 13에서 19로 변경
     image_size = [1024,1024]
     
     model = create_model(outs)
     #model = load_model('RailNet_DT/models/modelchp_105_300_0.001_32.pth')
 
     loss_function = nn.CrossEntropyLoss(ignore_index=255)
-    optimizer = AdamW(model.parameters(), lr=lr)
+    optimizer = Adam(model.parameters(), lr=lr)
     #scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=10, verbose=True,
                                                 #threshold=0.005, threshold_mode='abs')
     scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.5, total_iters=30)
@@ -267,7 +279,7 @@ if __name__ == "__main__":
     if WANDB:
         wandb_init(epochs, lr, batch_size, outs, str(optimizer.__class__), str(scheduler.__class__), str(model.__class__))
 
-    model_final, best_model = train(model, epochs, batch_size, image_size, optimizer, loss_function)
+    model_final, best_model = train(model, epochs, batch_size, image_size, optimizer, loss_function, outs)
 
     torch.save(model_final, os.path.join(PATH_MODELS, 'model_{}_{}_{}_{}.pth'.format(epochs, lr, outs, batch_size)))
     torch.save(best_model, os.path.join(PATH_MODELS, 'modelb_{}_{}_{}_{}.pth'.format(epochs, lr, outs, batch_size)))

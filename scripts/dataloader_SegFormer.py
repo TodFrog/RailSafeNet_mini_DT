@@ -5,36 +5,38 @@ import albumentations as A
 import numpy as np
 import cv2
 import re
+import torch
 
 class CustomDataset(VisionDataset):
-    def __init__(self, image_folder, mask_folder, image_processor, image_size, subset, val_fraction=0.1):
+    def __init__(self, image_folder, mask_folder, image_processor, image_size, subset, num_labels, val_fraction=0.1):
         self.image_folder = Path(image_folder)
         self.mask_folder = Path(mask_folder)
         self.val_fraction = val_fraction
         self.image_processor = image_processor
+        self.num_labels = num_labels
         
         # Define data transformations using Albumentations
         if subset == 'Train': 
             self.transform_base = A.Compose([
                             A.HorizontalFlip(p=0.5),
-                            A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=15, p=0.5),
+                            A.Affine(scale=(0.9, 1.1), translate_percent=0.0625, rotate=(-15, 15), p=0.5),
                             A.OneOf([
                                 A.RandomBrightnessContrast(p=1),
                                 A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2, p=1),
                             ], p=0.3),
                             A.OneOf([
-                                A.RandomRain(brightness_coefficient=0.9, drop_width=1, blur_value=5, p=1),
-                                A.RandomSunFlare(flare_roi=(0.5, 0.6, 0.7, 0.7), angle_lower=0.5, src_radius=350, p=1),
-                                A.RandomSnow(brightness_coeff=2.5, snow_point_lower=0.2, snow_point_upper=0.8, p=1),
-                                A.RandomFog(fog_coef_lower=0.2, fog_coef_upper=0.3, alpha_coef=0.3, p=1),
+                                A.RandomRain(p=1),
+                                A.RandomSunFlare(flare_roi=(0.5, 0.6, 0.7, 0.7), src_radius=350, p=1),
+                                A.RandomSnow(p=1),
+                                A.RandomFog(alpha_coef=0.3, p=1),
                             ], p=0.3),
                             A.OneOf([
-                                A.CoarseDropout(max_holes=100, max_height=30, max_width=30, min_height=10, min_width=10, min_holes=50, fill_value=0, p=1),
+                                A.GridDropout(p=1),
                                 A.GaussianBlur(blur_limit=(11, 21), p=1),
-                                A.GaussNoise(var_limit=(300.0, 650.0), mean=0, per_channel=True, p=1),
+                                A.GaussNoise(p=1),
                                 A.ISONoise(color_shift=(0.1, 0.5), intensity=(0.6, 0.9), p=1),
                             ], p=0.5),
-                            A.RandomResizedCrop(height=image_size[0], width=image_size[1], scale=(0.8, 1.0)),
+                            A.RandomResizedCrop(size=(image_size[0], image_size[1]), scale=(0.8, 1.0)),
                             ])
         elif subset == 'Valid':
             self.transform_base = A.Compose([
@@ -61,10 +63,10 @@ class CustomDataset(VisionDataset):
 
         self.mask_list = np.array(sorted(self.mask_list, key=lambda path: int(re.findall(r'\d+', path.stem)[0]) if re.findall(r'\d+', path.stem) else 0))
 
-        if subset == 'Train':  # split dataset to 1-fraction of train data, default fraction == 0.1
+        if subset == 'Train':
             self.image_names = self.image_list[:int(np.ceil(len(self.image_list) * (1 - self.val_fraction)))]
             self.mask_names = self.mask_list[:int(np.ceil(len(self.mask_list) * (1 - self.val_fraction)))]
-        elif subset == 'Valid':  # val data - data of length fraction
+        elif subset == 'Valid':
             self.image_names = self.image_list[int(np.ceil(len(self.image_list) * (1 - self.val_fraction))):]
             self.mask_names = self.mask_list[int(np.ceil(len(self.mask_list) * (1 - self.val_fraction))):]
         else:
@@ -86,30 +88,18 @@ class CustomDataset(VisionDataset):
             transformed_image = transformed['image']
             transformed_mask = transformed['mask']
             
-            # ignore not well segmented classes
             ignore = False
             if ignore:
-                ignore_list = [0,1,2,6,8,9,15,16,19,20]
-                for cls in ignore_list:
-                    transformed_mask[transformed_mask==cls] = 255
-
-                ignore_set = set(ignore_list)
-                cls_remaining = [num for num in range(0, 22) if num not in ignore_set]
-
-                # renumber the remaining classes 0-number of remaining classes
-                for idx, cls in enumerate(cls_remaining):
-                    transformed_mask[transformed_mask==cls] = idx
-
-                transformed_mask[transformed_mask==255] = 12 # background
+                # This block is currently not used
+                pass
             else:
-                transformed_mask[transformed_mask==255] = 21
+                transformed_mask[transformed_mask==255] = 255
             
-            encoded_inputs = self.image_processor(transformed_image, transformed_mask, return_tensors="pt")
-        
-            for k,v in encoded_inputs.items():
-                encoded_inputs[k].squeeze_() # remove batch dimension
+            # Using image_processor on image only
+            encoded_inputs = self.image_processor(transformed_image, return_tensors="pt")
+            image = encoded_inputs["pixel_values"].squeeze(0) # Remove batch dimension
 
-            image = encoded_inputs["pixel_values"]
-            mask = encoded_inputs["labels"]
+            # Convert mask to tensor separately
+            mask = torch.from_numpy(transformed_mask).long()
             
-            return [image,mask]
+            return [image, mask]

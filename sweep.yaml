@@ -1,0 +1,23 @@
+program: train_SegFormer_DDP.py
+method: random
+metric:
+  name: val_iou/rail-track
+  goal: maximize
+parameters:
+  epochs:
+    value: 50
+  learning_rate:
+    distribution: uniform
+    min: 0.00001
+    max: 0.001
+  optimizer:
+    values: ['adam', 'adagrad']
+  batch_size:
+    values: [16, 32] # 전체 배치 사이즈
+# command는 wandb agent가 각 trial을 실행할 때 사용할 명령어 템플릿입니다.
+command:
+  - ${env}
+  - torchrun
+  - --nproc_per_node=4
+  - ${program}
+  - ${args}
