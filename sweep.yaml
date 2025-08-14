@@ -13,7 +13,7 @@ parameters:
   optimizer:
     values: ['adam', 'adagrad']
   batch_size:
-    values: [16, 32] # 전체 배치 사이즈
+    values: [4] # 전체 배치 사이즈
 # command는 wandb agent가 각 trial을 실행할 때 사용할 명령어 템플릿입니다.
 command:
   - ${env}

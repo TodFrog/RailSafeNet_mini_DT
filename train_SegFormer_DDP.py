@@ -49,7 +49,7 @@ NUM_CLASSES = 19
 
 def create_model(output_channels=NUM_CLASSES):
     return SegformerForSemanticSegmentation.from_pretrained(
-        "nvidia/segformer-b1-finetuned-cityscapes-1024-1024",
+        "nvidia/segformer-b2-finetuned-cityscapes-1024-1024",
         num_labels=output_channels,
         ignore_mismatched_sizes=True
     )
