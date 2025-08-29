@@ -36,7 +36,7 @@ class CustomDataset(VisionDataset):
                                 A.GaussNoise(p=1),
                                 A.ISONoise(color_shift=(0.1, 0.5), intensity=(0.6, 0.9), p=1),
                             ], p=0.5),
-                            A.RandomResizedCrop(size=(image_size[0], image_size[1]), scale=(0.8, 1.0)),
+                            A.RandomResizedCrop(height=image_size[0], width=image_size[1], scale=(0.8, 1.0)),
                             ])
         elif subset == 'Valid':
             self.transform_base = A.Compose([
