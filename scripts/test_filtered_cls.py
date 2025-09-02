@@ -8,11 +8,11 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import torch.nn.functional as F
 from scripts.metrics_filtered_cls import compute_map_cls, compute_IoU, image_morpho
-from rs19_val.example_vis import rs19_label2bgr
+from assets.rs19val.example_vis import rs19_label2bgr
 
-PATH_jpgs = 'RailNet_DT/assets/rs19val/jpgs/test'
-PATH_masks = 'RailNet_DT/assets/rs19val/uint8/test'
-PATH_model = 'RailNet_DT/assets/models_pretrained/segformer/SegFormer_B3_1024_finetuned.pth'
+PATH_jpgs = '/home/mmc-server4/Server/Datasets_hdd/rs19_val/jpgs/rs19_val'
+PATH_masks = '/home/mmc-server4/Server/Datasets_hdd/rs19_val/uint8/rs19_val'
+PATH_model = '~/assets/models_pretrained/segformer/SegFormer_B3_1024_finetuned.pth'
 
 def load(filename, PATH_jpgs, input_size=[224,224], dataset_type='rs19val', item = None):
     transform_img = A.Compose([
@@ -51,7 +51,7 @@ def load(filename, PATH_jpgs, input_size=[224,224], dataset_type='rs19val', item
 
 def load_model(path_model):
     
-    model = torch.load(path_model, map_location=torch.device('cpu'))
+    model = torch.load(path_model, map_location=torch.device('cpu'), weights_only=False)
     model = model.cpu()
     model.eval()
     return model

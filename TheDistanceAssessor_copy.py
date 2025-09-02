@@ -212,6 +212,50 @@ def find_edges(image, y_levels, values=[0, 6], min_width=19):
         
         return edges_dict
 
+def identify_ego_track(edges_dict, image_width):
+    """
+    여러 선로 엣지들 중에서 주행 선로(ego track)만 식별하는 함수.
+    이미지 하단에서 가장 중앙에 가까운 선로를 주행 선로로 가정하고 추적합니다.
+    """
+    ego_edges_dict = {}
+    last_ego_track_center = None
+    
+    # y좌표를 내림차순으로 정렬 (이미지 하단부터 위로 스캔)
+    sorted_y_levels = sorted(edges_dict.keys(), reverse=True)
+    
+    image_center_x = image_width / 2
+    
+    # 가장 아래쪽(카메라와 가장 가까운) 선로부터 시작
+    if sorted_y_levels:
+        first_y = sorted_y_levels[0]
+        tracks_at_first_y = edges_dict[first_y]
+        
+        if tracks_at_first_y:
+            # 중앙에 가장 가까운 선로를 주행 선로로 선택
+            closest_track = min(
+                tracks_at_first_y,
+                key=lambda track: abs(((track[0] + track[1]) / 2) - image_center_x)
+            )
+            ego_edges_dict[first_y] = [closest_track]
+            last_ego_track_center = (closest_track[0] + closest_track[1]) / 2
+
+    # 나머지 y 레벨에 대해 이전 프레임과 가장 가까운 선로를 추적
+    for y in sorted_y_levels[1:]:
+        if last_ego_track_center is None:
+            break # 주행 선로를 찾지 못했으면 중단
+            
+        tracks_at_y = edges_dict[y]
+        if tracks_at_y:
+            # 이전 레벨의 주행 선로 중앙과 가장 가까운 선로를 선택
+            closest_track = min(
+                tracks_at_y,
+                key=lambda track: abs(((track[0] + track[1]) / 2) - last_ego_track_center)
+            )
+            ego_edges_dict[y] = [closest_track]
+            last_ego_track_center = (closest_track[0] + closest_track[1]) / 2
+            
+    return ego_edges_dict
+
 def find_rails(arr, y_levels, values=[9, 10], min_width=5):
         edges_all = []
         for y in y_levels:
@@ -858,8 +902,10 @@ def run(model_seg, model_det, image_size, filepath_img, PATH_jpgs, dataset_type,
         #edges = find_edges(segmentation_mask, clues, min_width=int(segmentation_mask.shape[1]*0.02))
         edges = find_edges(segmentation_mask, clues, min_width=0)
         #id_map_marked = mark_edges(segmentation_mask, edges)
-        
-        borders, id_map, regions = border_handler(segmentation_mask, image, edges, target_distances)
+        image_width = segmentation_mask.shape[1]
+        ego_edges = identify_ego_track(edges, image_width)
+
+        borders, id_map, regions = border_handler(segmentation_mask, image, ego_edges, target_distances)
         
         # Detection
         results, model, image = detect(model_det, filepath_img, PATH_jpgs)
