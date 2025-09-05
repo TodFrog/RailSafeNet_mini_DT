@@ -192,26 +192,39 @@ def stats_mean_and_reorder(classes_ap,classes_Map,classes_stats,classes_Mstats):
 
     return classes_ap,classes_Map,classes_stats,classes_Mstats
 
-def process(model, input_img, mask, model_type):
+def process(model, input_img, mask, model_type, output_size=None):
+    """
+    Runs inference and returns a segmentation map.
+    Can resize output to `output_size` if provided, otherwise uses mask or input size.
+    """
     if model_type == "segformer":
         outputs = model(input_img) # segformer
     elif model_type == "deeplab":
         outputs = model(input_img)['out'] # deeplab resnet
-    
+
     logits = outputs.logits
+
+    # Determine the target size for upsampling
+    if output_size:
+        target_size = output_size
+    elif mask is not None:
+        target_size = mask.shape[-2:]
+    else:
+        # Fallback to the input image size if no mask or output_size is provided
+        target_size = input_img.shape[-2:]
+
     upsampled_logits = nn.functional.interpolate(
         logits,
-        size=mask.shape[-2:],
+        size=target_size,
         mode="bilinear",
         align_corners=False
     )
-    
+
     output  = upsampled_logits.float()
-        
+
     confidence_scores = F.softmax(output, dim=1).cpu().detach().numpy().squeeze()
     id_map = np.argmax(confidence_scores, axis=0).astype(np.uint8)
-    id_map = image_morpho(id_map)
-    
+
     return id_map
 
 if __name__ == "__main__":

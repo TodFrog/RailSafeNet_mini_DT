@@ -1,23 +1,48 @@
-program: train_SegFormer_DDP.py
-method: random
+# sweep_rail_focused.yaml
+program: train_SegFormer_single.py
+method: bayes
 metric:
-  name: val_iou/rail-track
+  name: val/best_rail_iou  # 수정: 실제 추적되는 메트릭으로 변경
   goal: maximize
+
 parameters:
   epochs:
-    value: 50
-  learning_rate:
-    distribution: uniform
-    min: 0.00001
-    max: 0.001
-  optimizer:
-    values: ['adam', 'adagrad']
+    value: 30
+  
+  # 메모리 여유를 활용한 다양한 배치 크기
   batch_size:
-    values: [4] # 전체 배치 사이즈
-# command는 wandb agent가 각 trial을 실행할 때 사용할 명령어 템플릿입니다.
+    values: [8, 12, 16]
+    
+  # Accumulation steps (실효 배치 크기 = batch_size × accumulation_steps)
+  accumulation_steps:
+    values: [1, 2, 3]
+    
+  # 해상도 옵션 (높은 해상도로 성능 향상)
+  image_resolution:
+    values: [640, 768, 896, 1024]
+    
+  # Learning rate 범위
+  learning_rate:
+    distribution: log_uniform_values
+    min: 0.00001   # 1e-5
+    max: 0.0001    # 1e-4
+    
+  # 인코더 동결 정도 (성능 vs 메모리 트레이드오프)
+  freeze_encoder_blocks:
+    values: [0, 1, 2]  # 0=전체해동, 1=첫블록만동결, 2=첫두블록동결
+    
+  # Optimizer weight decay
+  weight_decay:
+    values: [0.01, 0.05, 0.1]
+    
+  # Learning rate scheduler
+  lr_scheduler_step:
+    values: [10, 15, 20]
+  lr_scheduler_gamma:
+    values: [0.8, 0.85, 0.9]
+
 command:
   - ${env}
-  - torchrun
-  - --nproc_per_node=4
+  - python
   - ${program}
   - ${args}
