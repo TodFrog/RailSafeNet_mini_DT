@@ -1,48 +1,70 @@
-# sweep_rail_focused.yaml
+# sweep_rail_focused_fixed.yaml
+# SegFormer B3 RailSem19 최적화를 위한 Bayesian Optimization Sweep
+
 program: train_SegFormer_single.py
 method: bayes
 metric:
-  name: val/best_rail_iou  # 수정: 실제 추적되는 메트릭으로 변경
+  name: val_iou/rail-track  # 수정: DDP 버전과 동일한 메트릭명
   goal: maximize
+
+# Early termination (성능이 낮은 run 조기 종료)
+early_terminate:
+  type: hyperband
+  min_iter: 8  # 최소 10 epoch은 돌리기
+  eta: 3
 
 parameters:
   epochs:
-    value: 30
+    value: 30  # rail-track IoU 수렴을 위해 약간 늘림
   
-  # 메모리 여유를 활용한 다양한 배치 크기
+  # 메모리 최적화된 배치 크기 조합
   batch_size:
-    values: [8, 12, 16]
+    values: [6, 8, 10, 12]  # B3는 메모리 사용량이 많으므로 보수적으로
     
-  # Accumulation steps (실효 배치 크기 = batch_size × accumulation_steps)
+  # Gradient accumulation으로 실효 배치 크기 조절
   accumulation_steps:
-    values: [1, 2, 3]
+    values: [2, 3, 4]  # 실효 배치 크기: 8~72
     
-  # 해상도 옵션 (높은 해상도로 성능 향상)
+  # 해상도 (rail-track 세그멘테이션 성능에 중요)
   image_resolution:
-    values: [640, 768, 896, 1024]
+    values: [768, 896, 1024]  # 1024는 B3에서 OOM 위험
     
-  # Learning rate 범위
+  # Learning rate (B3는 더 낮은 LR 선호)
   learning_rate:
     distribution: log_uniform_values
-    min: 0.00001   # 1e-5
-    max: 0.0001    # 1e-4
+    min: 0.000008   # 5e-6
+    max: 0.00012    # 8e-5
     
-  # 인코더 동결 정도 (성능 vs 메모리 트레이드오프)
+  # Transfer learning 전략 (인코더 동결)
   freeze_encoder_blocks:
-    values: [0, 1, 2]  # 0=전체해동, 1=첫블록만동결, 2=첫두블록동결
+    values: [0, 1, 2]  # B3는 4개 블록, 더 세밀한 조절
     
-  # Optimizer weight decay
+  # Regularization
   weight_decay:
-    values: [0.01, 0.05, 0.1]
+    distribution: uniform
+    min: 0.008
+    max: 0.08
     
-  # Learning rate scheduler
+  # Learning rate scheduler 세팅
   lr_scheduler_step:
-    values: [10, 15, 20]
+    values: [10, 15, 20]  # 더 빠른 decay로 세밀한 조정
+  
   lr_scheduler_gamma:
-    values: [0.8, 0.85, 0.9]
+    distribution: uniform
+    min: 0.8
+    max: 0.95
 
+
+# GPU 1번 제외 설정
+environment:
+  CUDA_VISIBLE_DEVICES: "0,2,3"
+
+# 실행 명령어
 command:
   - ${env}
   - python
   - ${program}
   - ${args}
+
+# 런 개수 제한 (베이지안 최적화는 적은 수로도 효과적)
+count: 25
